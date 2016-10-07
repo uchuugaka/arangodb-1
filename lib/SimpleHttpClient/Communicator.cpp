@@ -292,7 +292,7 @@ void Communicator::createRequestInProgress(NewRequest const& newRequest) {
   // mop: although curl is offering a MS scale connecttimeout this gets ignored in at least 7.50.3
   // in doubt change the timeout to _MS below and hardcode it to 999 and see if the requests immediately fail
   // if not this hack can go away
-  if(connectTimeout < 0) {
+  if(connectTimeout <= 0) {
     connectTimeout = 1;
   }
 
