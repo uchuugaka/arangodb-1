@@ -143,10 +143,12 @@ void SchedulerFeature::stop() {
     usleep(100000);
   }
 
-  _scheduler->shutdown();
 }
 
-void SchedulerFeature::unprepare() { SCHEDULER = nullptr; }
+void SchedulerFeature::unprepare() {
+  _scheduler->shutdown();
+  SCHEDULER = nullptr;
+}
 
 #ifdef _WIN32
 bool CtrlHandler(DWORD eventType) {
@@ -239,7 +241,7 @@ void SchedulerFeature::buildControlCHandler() {
 
   auto ioService = _scheduler->managerService();
   _exitSignals = std::make_shared<boost::asio::signal_set>(*ioService, SIGINT, SIGTERM, SIGQUIT);
-  
+
   _signalHandler = [this](const boost::system::error_code& error, int number) {
     if (error) {
       return;
