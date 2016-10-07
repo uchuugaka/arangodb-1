@@ -27,6 +27,7 @@
 #include "Basics/Common.h"
 #include "VocBase/transaction.h"
 #include "VocBase/vocbase.h"
+#include "VocBase/LogicalCollection.h"
 
 namespace arangodb {
 namespace aql {
@@ -82,6 +83,14 @@ struct Collection {
 
   /// @brief set the underlying collection
   void setCollection(arangodb::LogicalCollection* coll) { collection = coll; }
+
+  /// @brief either use the set collection or get one from ClusterInfo:
+  std::shared_ptr<arangodb::LogicalCollection> getCollection() const;
+
+  /// @brief check smartness of the underlying collection
+  bool isSmart() const {
+    return getCollection()->isSmart();
+  }
 
  private:
 

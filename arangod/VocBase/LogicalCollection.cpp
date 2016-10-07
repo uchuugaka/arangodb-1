@@ -48,6 +48,7 @@
 #include "Utils/CollectionNameResolver.h"
 #include "Utils/CollectionReadLocker.h"
 #include "Utils/CollectionWriteLocker.h"
+#include "Utils/Events.h"
 #include "Utils/SingleCollectionTransaction.h"
 #include "Utils/StandaloneTransactionContext.h"
 #include "VocBase/PhysicalCollection.h"
@@ -295,31 +296,31 @@ static std::shared_ptr<Index> PrepareIndexFromSlice(VPackSlice info,
 ///        modifications and can be freed
 ///        Can only be given to V8, cannot be used for functionality.
 LogicalCollection::LogicalCollection(
-    std::shared_ptr<LogicalCollection> const& other)
+    LogicalCollection const& other)
     : _internalVersion(0),
-      _cid(other->cid()),
-      _planId(other->planId()),
-      _type(other->type()),
-      _name(other->name()),
-      _distributeShardsLike(other->distributeShardsLike()),
-      _isSmart(other->isSmart()),
-      _status(other->status()),
+      _cid(other.cid()),
+      _planId(other.planId()),
+      _type(other.type()),
+      _name(other.name()),
+      _distributeShardsLike(other.distributeShardsLike()),
+      _isSmart(other.isSmart()),
+      _status(other.status()),
       _isLocal(false),
-      _isDeleted(other->_isDeleted),
-      _doCompact(other->doCompact()),
-      _isSystem(other->isSystem()),
-      _isVolatile(other->isVolatile()),
-      _waitForSync(other->waitForSync()),
-      _journalSize(other->journalSize()),
-      _keyOptions(other->_keyOptions),
-      _version(other->_version),
-      _indexBuckets(other->indexBuckets()),
+      _isDeleted(other._isDeleted),
+      _doCompact(other.doCompact()),
+      _isSystem(other.isSystem()),
+      _isVolatile(other.isVolatile()),
+      _waitForSync(other.waitForSync()),
+      _journalSize(other.journalSize()),
+      _keyOptions(other._keyOptions),
+      _version(other._version),
+      _indexBuckets(other.indexBuckets()),
       _indexes(),
-      _replicationFactor(other->replicationFactor()),
-      _numberOfShards(other->numberOfShards()),
-      _allowUserKeys(other->allowUserKeys()),
+      _replicationFactor(other.replicationFactor()),
+      _numberOfShards(other.numberOfShards()),
+      _allowUserKeys(other.allowUserKeys()),
       _shardIds(new ShardMap()),  // Not needed
-      _vocbase(other->vocbase()),
+      _vocbase(other.vocbase()),
       _cleanupIndexes(0),
       _persistentIndexes(0),
       _physical(nullptr),
@@ -331,7 +332,9 @@ LogicalCollection::LogicalCollection(
       _lastCompactionStatus(nullptr),
       _lastCompactionStamp(0.0),
       _uncollectedLogfileEntries(0) {
-  _keyGenerator.reset(KeyGenerator::factory(other->keyOptions()));
+  _keyGenerator.reset(KeyGenerator::factory(other.keyOptions()));
+
+  
   
   createPhysical();
 
@@ -341,8 +344,8 @@ LogicalCollection::LogicalCollection(
   }
 
   // Copy over index definitions
-  _indexes.reserve(other->_indexes.size());
-  for (auto const& idx : other->_indexes) {
+  _indexes.reserve(other._indexes.size());
+  for (auto const& idx : other._indexes) {
     _indexes.emplace_back(idx);
   }
 
@@ -695,6 +698,10 @@ std::string const& LogicalCollection::distributeShardsLike() const {
   return _distributeShardsLike;
 }
 
+void LogicalCollection::distributeShardsLike(std::string const& cid) {
+  _distributeShardsLike = cid;
+}
+
 std::string LogicalCollection::dbName() const {
   TRI_ASSERT(_vocbase != nullptr);
   return _vocbase->name();
@@ -704,7 +711,7 @@ std::string const& LogicalCollection::path() const {
   return _path;
 }
 
-TRI_vocbase_col_status_e LogicalCollection::status() {
+TRI_vocbase_col_status_e LogicalCollection::status() const {
   return _status;
 }
 
@@ -1034,7 +1041,6 @@ void LogicalCollection::toVelocyPackInObject(VPackBuilder& result) const {
   result.add("indexBuckets", VPackValue(_indexBuckets));
   result.add("replicationFactor", VPackValue(_replicationFactor));
   result.add("numberOfShards", VPackValue(_numberOfShards));
-  result.add("isSmart", VPackValue(_isSmart));
   if (!_distributeShardsLike.empty()) {
     result.add("distributeShardsLike", VPackValue(_distributeShardsLike));
   }
@@ -1550,6 +1556,7 @@ bool LogicalCollection::dropIndex(TRI_idx_iid_t iid, bool writeMarker) {
   TRI_ASSERT(!ServerState::instance()->isCoordinator());
   if (iid == 0) {
     // invalid index id or primary index
+    events::DropIndex("", std::to_string(iid), TRI_ERROR_NO_ERROR);
     return true;
   }
 
@@ -1558,6 +1565,7 @@ bool LogicalCollection::dropIndex(TRI_idx_iid_t iid, bool writeMarker) {
         _vocbase, name());
     if (!removeIndex(iid)) {
       // We tried to remove an index that does not exist
+      events::DropIndex("", std::to_string(iid), TRI_ERROR_ARANGO_INDEX_NOT_FOUND);
       return false;
     }
   }
@@ -1586,6 +1594,7 @@ bool LogicalCollection::dropIndex(TRI_idx_iid_t iid, bool writeMarker) {
         THROW_ARANGO_EXCEPTION(slotInfo.errorCode);
       }
 
+      events::DropIndex("", std::to_string(iid), TRI_ERROR_NO_ERROR);
       return true;
     } catch (basics::Exception const& ex) {
       res = ex.code();
@@ -1594,6 +1603,7 @@ bool LogicalCollection::dropIndex(TRI_idx_iid_t iid, bool writeMarker) {
     }
 
     LOG(WARN) << "could not save index drop marker in log: " << TRI_errno_string(res);
+    events::DropIndex("", std::to_string(iid), res);
     // TODO: what to do here?
   }
 
@@ -1614,12 +1624,7 @@ void LogicalCollection::createInitialIndexes() {
 
   // create edges index
   if (_type == TRI_COL_TYPE_EDGE) {
-    TRI_idx_iid_t iid = _cid;
-    if (!_isLocal) {
-      iid = _planId;
-    }
-
-    auto edgeIndex = std::make_shared<arangodb::EdgeIndex>(iid, this);
+    auto edgeIndex = std::make_shared<arangodb::EdgeIndex>(1, this);
 
     addIndex(edgeIndex);
   }

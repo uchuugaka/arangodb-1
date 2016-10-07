@@ -20,6 +20,7 @@
     renderComplete: false,
 
     customQueries: [],
+    cachedQueries: {},
     queries: [],
 
     state: {
@@ -70,7 +71,7 @@
       'click #clearQuery': 'clearQuery',
       'click .outputEditorWrapper #downloadQueryResult': 'downloadQueryResult',
       'click .outputEditorWrapper .switchAce span': 'switchAce',
-      'click .outputEditorWrapper .fa-close': 'closeResult',
+      'click .outputEditorWrapper .closeResult': 'closeResult',
       'click #toggleQueries1': 'toggleQueries',
       'click #toggleQueries2': 'toggleQueries',
       'click #createNewQuery': 'createAQL',
@@ -98,8 +99,14 @@
       this.aqlEditor.setValue('', 1);
     },
 
-    closeProfile: function () {
-      $('.queryProfile').fadeOut('fast');
+    closeProfile: function (e) {
+      var count = $(e.currentTarget).parent().attr('counter');
+
+      _.each($('.queryProfile'), function (elem) {
+        if ($(elem).attr('counter') === count) {
+          $(elem).fadeOut('fast');
+        }
+      });
     },
 
     toggleBindParams: function () {
@@ -166,6 +173,7 @@
     },
 
     removeResults: function () {
+      this.cachedQueries = {};
       $('.outputEditorWrapper').hide('fast', function () {
         $('.outputEditorWrapper').remove();
       });
@@ -323,6 +331,7 @@
         this.toggleQueries();
       }
 
+      var lastQueryName = localStorage.getItem('lastOpenQuery');
       // backup the last query
       this.state.lastQuery.query = this.aqlEditor.getValue();
       this.state.lastQuery.bindParam = this.bindParamTableObj;
@@ -342,10 +351,12 @@
       // render a button to revert back to last query
       $('#lastQuery').remove();
 
-      $('#queryContent .arangoToolbarTop .pull-left')
-        .append('<span id="lastQuery" class="clickable">Previous Query</span>');
+      if (lastQueryName !== name) {
+        $('#queryContent .arangoToolbarTop .pull-left')
+          .append('<span id="lastQuery" class="clickable">Previous Query</span>');
 
-      this.breadcrumb(name);
+        this.breadcrumb(name);
+      }
 
       $('#lastQuery').hide().fadeIn(500)
         .on('click', function () {
@@ -456,6 +467,8 @@
         return;
       }
 
+      this.lastSentQueryString = this.aqlEditor.getValue();
+
       this.$(this.outputDiv).prepend(this.outputTemplate.render({
         counter: this.outputCounter,
         type: 'Explain'
@@ -518,11 +531,17 @@
               self.removeOutputEditor(counter);
               arangoHelper.arangoError('Explain', data.msg);
             } else {
+              // cache explain results
+              self.cachedQueries[counter] = data;
+
               outputEditor.setValue(data.msg, 1);
               self.deselect(outputEditor);
               $.noty.clearQueue();
               $.noty.closeAll();
               self.handleResult(counter);
+
+              // SCROLL TO RESULT BOX
+              $('.centralRow').animate({ scrollTop: $('#queryContent').height() }, 'fast');
             }
             afterResult();
           },
@@ -620,10 +639,17 @@
     },
 
     closeResult: function (e) {
+      var self = this;
       var target = $('#' + $(e.currentTarget).attr('element')).parent();
+      var id = $(target).attr('id');
+      var counter = id.substring(id.length - 1, id.length - 0);
+
+      delete this.cachedQueries[counter];
+
       $(target).hide('fast', function () {
         $(target).remove();
         if ($('.outputEditorWrapper').length === 0) {
+          self.cachedQueries = {};
           $('#removeResults').hide();
         }
       });
@@ -672,6 +698,29 @@
         self.resize();
       }, 10);
       self.deselect(self.aqlEditor);
+
+      this.restoreCachedQueries();
+    },
+
+    restoreCachedQueries: function () {
+      var self = this;
+
+      if (Object.keys(this.cachedQueries).length > 0) {
+        _.each(this.cachedQueries, function (query, counter) {
+          self.renderQueryResultBox(counter, null, true);
+          self.renderQueryResult(query, counter, true);
+          self.fillSentQueryValue(counter);
+
+          if (query.sentQuery) {
+            self.bindQueryResultButtons(null, counter);
+          }
+        });
+      }
+    },
+
+    fillSentQueryValue: function (counter) {
+      var sentQueryEditor = ace.edit('sentQueryEditor' + counter);
+      sentQueryEditor.setValue(this.cachedQueries[counter].sentQuery, 1);
     },
 
     showSpotlight: function (type) {
@@ -980,6 +1029,27 @@
           '</tr>'
         );
       }
+
+      // check if existing entry already has a stored value
+      var queryName = localStorage.getItem('lastOpenQuery');
+      var query = this.collection.findWhere({name: queryName});
+
+      try {
+        query = query.toJSON();
+      } catch (ignore) {
+      }
+
+      if (query) {
+        var attributeName;
+        _.each($('#arangoBindParamTable input'), function (elem) {
+          attributeName = $(elem).attr('name');
+          _.each(query.parameter, function (qVal, qKey) {
+            if (qKey === attributeName) {
+              $(elem).val(qVal);
+            }
+          });
+        });
+      }
     },
 
     fillBindParamTable: function (object) {
@@ -1163,7 +1233,6 @@
     addAQL: function () {
       // update queries first, before showing
       this.refreshAQL(true);
-
       // render options
       this.createCustomQueryModal();
       setTimeout(function () {
@@ -1175,14 +1244,19 @@
       var content = this.aqlEditor.getValue();
       var queryName = localStorage.getItem('lastOpenQuery');
       var query = this.collection.findWhere({name: queryName});
+
       if (query) {
+        // SET QUERY STRING
         query.set('value', content);
+        // SET QUERY BIND PARAMS
+        query.set('parameter', this.bindParamTableObj);
+
         var callback = function (error) {
           if (error) {
             arangoHelper.arangoError('Query', 'Could not save query');
           } else {
             var self = this;
-            arangoHelper.arangoNotification('Queries', 'Saved query ' + queryName);
+            arangoHelper.arangoNotification('Saved query', '"' + queryName + '"');
             this.collection.fetch({
               success: function () {
                 self.updateLocalQueries();
@@ -1333,7 +1407,7 @@
       window.setTimeout(function () {
         if (name) {
           $('#subNavigationBar .breadcrumb').html(
-            'Query: ' + name
+            'Query: <span id="lastQueryName">' + name + '</span>'
           );
         } else {
           $('#subNavigationBar .breadcrumb').html('');
@@ -1368,15 +1442,20 @@
         return;
       }
 
-      this.$(this.outputDiv).prepend(this.outputTemplate.render({
-        counter: this.outputCounter,
-        type: 'Query'
-      }));
-
       $('#outputEditorWrapper' + this.outputCounter).hide();
       $('#outputEditorWrapper' + this.outputCounter).show('fast');
 
-      var counter = this.outputCounter;
+      this.lastSentQueryString = this.aqlEditor.getValue();
+
+      this.renderQueryResultBox(this.outputCounter, selected);
+    },
+
+    renderQueryResultBox: function (counter, selected, cached) {
+      this.$(this.outputDiv).prepend(this.outputTemplate.render({
+        counter: counter,
+        type: 'Query'
+      }));
+
       var outputEditor = ace.edit('outputEditor' + counter);
       var sentQueryEditor = ace.edit('sentQueryEditor' + counter);
       var sentBindParamEditor = ace.edit('sentBindParamEditor' + counter);
@@ -1400,8 +1479,10 @@
       sentBindParamEditor.setReadOnly(true);
       this.setEditorAutoHeight(sentBindParamEditor);
 
-      this.fillResult(outputEditor, sentQueryEditor, counter, selected);
-      this.outputCounter++;
+      if (!cached) {
+        this.fillResult(counter, selected);
+        this.outputCounter++;
+      }
     },
 
     readQueryData: function (selected, forExecute) {
@@ -1430,8 +1511,17 @@
           data.batchSize = parseInt(sizeBox.val(), 10);
         }
 
+        var bindVars = {};
         if (Object.keys(this.bindParamTableObj).length > 0) {
+          _.each(this.bindParamTableObj, function (val, key) {
+            if (data.query.indexOf(key) > -1) {
+              bindVars[key] = val;
+            }
+          });
           data.bindVars = this.bindParamTableObj;
+        }
+        if (Object.keys(bindVars).length > 0) {
+          data.bindVars = bindVars;
         }
 
         // add profile flag for query execution
@@ -1445,7 +1535,7 @@
       return JSON.stringify(data);
     },
 
-    fillResult: function (outputEditor, sentQueryEditor, counter, selected) {
+    fillResult: function (counter, selected) {
       var self = this;
 
       var queryData = this.readQueryData(selected, true);
@@ -1455,6 +1545,7 @@
       }
 
       if (queryData) {
+        var sentQueryEditor = ace.edit('sentQueryEditor' + counter);
         sentQueryEditor.setValue(self.aqlEditor.getValue(), 1);
 
         $.ajax({
@@ -1468,7 +1559,7 @@
           processData: false,
           success: function (data, textStatus, xhr) {
             if (xhr.getResponseHeader('x-arango-async-id')) {
-              self.queryCallbackFunction(xhr.getResponseHeader('x-arango-async-id'), outputEditor, counter);
+              self.queryCallbackFunction(xhr.getResponseHeader('x-arango-async-id'), counter);
             }
             $.noty.clearQueue();
             $.noty.closeAll();
@@ -1496,8 +1587,6 @@
       window.setTimeout(function () {
         self.aqlEditor.focus();
       }, 300);
-
-      $('.centralRow').animate({ scrollTop: $('#queryContent').height() }, 'fast');
     },
 
     setEditorAutoHeight: function (editor) {
@@ -1530,20 +1619,167 @@
       editor.focus();
     },
 
-    queryCallbackFunction: function (queryID, outputEditor, counter) {
+    warningsFunc: function (data, outputEditor) {
+      var warnings = '';
+      if (data.extra && data.extra.warnings && data.extra.warnings.length > 0) {
+        warnings += 'Warnings:' + '\r\n\r\n';
+        data.extra.warnings.forEach(function (w) {
+          warnings += '[' + w.code + "], '" + w.message + "'\r\n";
+        });
+      }
+      if (warnings !== '') {
+        warnings += '\r\n' + 'Result:' + '\r\n\r\n';
+      }
+      outputEditor.setValue(warnings + JSON.stringify(data.result, undefined, 2), 1);
+      outputEditor.getSession().setScrollTop(0);
+    },
+
+    renderQueryResult: function (data, counter, cached) {
       var self = this;
 
-      var cancelRunningQuery = function (id, counter) {
-        $.ajax({
-          url: arangoHelper.databaseUrl('/_api/job/' + encodeURIComponent(id) + '/cancel'),
-          type: 'PUT',
-          success: function () {
-            window.clearTimeout(self.checkQueryTimer);
-            $('#outputEditorWrapper' + counter).remove();
-            arangoHelper.arangoNotification('Query', 'Query canceled.');
+      if (window.location.hash === '#queries') {
+        var outputEditor = ace.edit('outputEditor' + counter);
+
+        // handle explain query case
+        if (!data.msg) {
+          // handle usual query
+          var result = self.analyseQuery(data.result);
+          // console.log('Using ' + result.defaultType + ' as data format.');
+          if (result.defaultType === 'table') {
+            $('#outputEditorWrapper' + counter + ' .arangoToolbarTop').after(
+              '<div id="outputTable' + counter + '" class="outputTable"></div>'
+            );
+            $('#outputTable' + counter).show();
+            self.renderOutputTable(result, counter);
+
+            // apply max height for table output dynamically
+            var maxHeight = $('.centralRow').height() - 250;
+            $('.outputEditorWrapper .tableWrapper').css('max-height', maxHeight);
+
+            $('#outputEditor' + counter).hide();
+          } else if (result.defaultType === 'graph') {
+            $('#outputEditorWrapper' + counter + ' .arangoToolbarTop').after('<div id="outputGraph' + counter + '"></div>');
+            $('#outputGraph' + counter).show();
+            self.renderOutputGraph(result, counter);
+
+            $('#outputEditor' + counter).hide();
+
+            $('#outputEditorWrapper' + counter + ' #copy2gV').show();
+            $('#outputEditorWrapper' + counter + ' #copy2gV').bind('click', function () {
+              self.showResultInGraphViewer(result, counter);
+            });
           }
-        });
-      };
+
+          // add active class to choosen display method
+          $('#' + result.defaultType + '-switch').addClass('active').css('display', 'inline');
+
+          var appendSpan = function (value, icon, css) {
+            if (!css) {
+              css = '';
+            }
+            $('#outputEditorWrapper' + counter + ' .arangoToolbarTop .pull-left').append(
+              '<span class="' + css + '"><i class="fa ' + icon + '"></i><i class="iconText">' + value + '</i></span>'
+            );
+          };
+
+          var time = '-';
+          if (data && data.extra && data.extra.stats) {
+            time = data.extra.stats.executionTime.toFixed(3) + ' s';
+          }
+          appendSpan(
+            data.result.length + ' elements', 'fa-calculator'
+          );
+          appendSpan(time, 'fa-clock-o');
+
+          if (data.extra) {
+            if (data.extra.profile) {
+              appendSpan('', 'fa-caret-down');
+              self.appendProfileDetails(counter, data.extra.profile);
+            }
+
+            if (data.extra.stats) {
+              if (data.extra.stats.writesExecuted > 0 || data.extra.stats.writesIgnored > 0) {
+                appendSpan(
+                  data.extra.stats.writesExecuted + ' writes', 'fa-check-circle positive'
+                );
+                if (data.extra.stats.writesIgnored === 0) {
+                  appendSpan(
+                    data.extra.stats.writesIgnored + ' writes ignored', 'fa-check-circle positive', 'additional'
+                  );
+                } else {
+                  appendSpan(
+                    data.extra.stats.writesIgnored + ' writes ignored', 'fa-exclamation-circle warning', 'additional'
+                  );
+                }
+              }
+            }
+          }
+        }
+
+        $('#outputEditorWrapper' + counter + ' .pull-left #spinner').remove();
+        $('#outputEditorWrapper' + counter + ' #cancelCurrentQuery').remove();
+
+        self.warningsFunc(data, outputEditor);
+        window.progressView.hide();
+
+        $('#outputEditorWrapper' + counter + ' .switchAce').show();
+        $('#outputEditorWrapper' + counter + ' .fa-close').show();
+        $('#outputEditor' + counter).css('opacity', '1');
+
+        if (!data.msg) {
+          $('#outputEditorWrapper' + counter + ' #downloadQueryResult').show();
+          $('#outputEditorWrapper' + counter + ' #copy2aqlEditor').show();
+        }
+
+        self.setEditorAutoHeight(outputEditor);
+        self.deselect(outputEditor);
+
+        // when finished send a delete req to api (free db space)
+        if (data.id) {
+          $.ajax({
+            url: arangoHelper.databaseUrl('/_api/cursor/' + encodeURIComponent(data.id)),
+            type: 'DELETE'
+          });
+        }
+
+        if (!cached) {
+          // cache the query
+          self.cachedQueries[counter] = data;
+
+          // cache the original sent aql string
+          this.cachedQueries[counter].sentQuery = self.aqlEditor.getValue();
+        }
+
+        if (data.msg) {
+          $('#outputEditorWrapper' + counter + ' .toolbarType').html('Explain');
+          outputEditor.setValue(data.msg, 1);
+        }
+      } else {
+        // if result comes in when view is not active
+        // store the data into cachedQueries obj
+        self.cachedQueries[counter] = data;
+        self.cachedQueries[counter].sentQuery = self.lastSentQueryString;
+
+        arangoHelper.arangoNotification('Query finished', 'Return to queries view to see the result.');
+      }
+    },
+
+    bindQueryResultButtons: function (queryID, counter) {
+      var self = this;
+
+      if (queryID) {
+        var cancelRunningQuery = function (id, counter) {
+          $.ajax({
+            url: arangoHelper.databaseUrl('/_api/job/' + encodeURIComponent(id) + '/cancel'),
+            type: 'PUT',
+            success: function () {
+              window.clearTimeout(self.checkQueryTimer);
+              $('#outputEditorWrapper' + counter).remove();
+              arangoHelper.arangoNotification('Query', 'Query canceled.');
+            }
+          });
+        };
+      }
 
       $('#outputEditorWrapper' + counter + ' #cancelCurrentQuery').bind('click', function () {
         cancelRunningQuery(queryID, counter);
@@ -1572,115 +1808,13 @@
         $('.centralRow').animate({ scrollTop: 0 }, 'fast');
         self.resize();
       });
+    },
 
+    queryCallbackFunction: function (queryID, counter) {
+      var self = this;
+
+      this.bindQueryResultButtons(queryID, counter);
       this.execPending = false;
-
-      var warningsFunc = function (data) {
-        var warnings = '';
-        if (data.extra && data.extra.warnings && data.extra.warnings.length > 0) {
-          warnings += 'Warnings:' + '\r\n\r\n';
-          data.extra.warnings.forEach(function (w) {
-            warnings += '[' + w.code + "], '" + w.message + "'\r\n";
-          });
-        }
-        if (warnings !== '') {
-          warnings += '\r\n' + 'Result:' + '\r\n\r\n';
-        }
-        outputEditor.setValue(warnings + JSON.stringify(data.result, undefined, 2), 1);
-        outputEditor.getSession().setScrollTop(0);
-      };
-
-      var fetchQueryResult = function (data) {
-        warningsFunc(data);
-        window.progressView.hide();
-
-        var result = self.analyseQuery(data.result);
-        // console.log('Using ' + result.defaultType + ' as data format.');
-        if (result.defaultType === 'table') {
-          $('#outputEditorWrapper' + counter + ' .arangoToolbarTop').after(
-            '<div id="outputTable' + counter + '" class="outputTable"></div>'
-          );
-          $('#outputTable' + counter).show();
-          self.renderOutputTable(result, counter);
-
-          // apply max height for table output dynamically
-          var maxHeight = $('.centralRow').height() - 250;
-          $('.outputEditorWrapper .tableWrapper').css('max-height', maxHeight);
-
-          $('#outputEditor' + counter).hide();
-        } else if (result.defaultType === 'graph') {
-          $('#outputEditorWrapper' + counter + ' .arangoToolbarTop').after('<div id="outputGraph' + counter + '"></div>');
-          $('#outputGraph' + counter).show();
-          self.renderOutputGraph(result, counter);
-
-          $('#outputEditor' + counter).hide();
-        }
-
-        // add active class to choosen display method
-        $('#' + result.defaultType + '-switch').addClass('active').css('display', 'inline');
-
-        var appendSpan = function (value, icon, css) {
-          if (!css) {
-            css = '';
-          }
-          $('#outputEditorWrapper' + counter + ' .arangoToolbarTop .pull-left').append(
-            '<span class="' + css + '"><i class="fa ' + icon + '"></i><i class="iconText">' + value + '</i></span>'
-          );
-        };
-
-        $('#outputEditorWrapper' + counter + ' .pull-left #spinner').remove();
-
-        var time = '-';
-        if (data && data.extra && data.extra.stats) {
-          time = data.extra.stats.executionTime.toFixed(3) + ' s';
-        }
-        appendSpan(
-          data.result.length + ' elements', 'fa-calculator'
-        );
-        appendSpan(time, 'fa-clock-o');
-
-        if (data.extra) {
-          if (data.extra.profile) {
-            appendSpan('', 'fa-caret-down');
-            self.appendProfileDetails(counter, data.extra.profile);
-          }
-
-          if (data.extra.stats) {
-            if (data.extra.stats.writesExecuted > 0 || data.extra.stats.writesIgnored > 0) {
-              appendSpan(
-                data.extra.stats.writesExecuted + ' writes', 'fa-check-circle positive'
-              );
-              if (data.extra.stats.writesIgnored === 0) {
-                appendSpan(
-                  data.extra.stats.writesIgnored + ' writes ignored', 'fa-check-circle positive', 'additional'
-                );
-              } else {
-                appendSpan(
-                  data.extra.stats.writesIgnored + ' writes ignored', 'fa-exclamation-circle warning', 'additional'
-                );
-              }
-            }
-          }
-        }
-
-        $('#outputEditorWrapper' + counter + ' .switchAce').show();
-        $('#outputEditorWrapper' + counter + ' .fa-close').show();
-        $('#outputEditor' + counter).css('opacity', '1');
-        $('#outputEditorWrapper' + counter + ' #downloadQueryResult').show();
-        $('#outputEditorWrapper' + counter + ' #copy2aqlEditor').show();
-        $('#outputEditorWrapper' + counter + ' #cancelCurrentQuery').remove();
-
-        self.setEditorAutoHeight(outputEditor);
-        self.deselect(outputEditor);
-
-        // when finished send a delete req to api (free db space)
-        if (data.id) {
-          $.ajax({
-            url: arangoHelper.databaseUrl('/_api/cursor/' + encodeURIComponent(data.id)),
-            type: 'DELETE'
-          });
-        }
-      };
 
       // check if async query is finished
       var checkQueryStatus = function () {
@@ -1692,13 +1826,16 @@
           success: function (data, textStatus, xhr) {
             // query finished, now fetch results
             if (xhr.status === 201) {
-              fetchQueryResult(data);
+              self.renderQueryResult(data, counter);
             } else if (xhr.status === 204) {
             // query not ready yet, retry
               self.checkQueryTimer = window.setTimeout(function () {
                 checkQueryStatus();
               }, 500);
             }
+
+            // SCROLL TO RESULT BOX
+            $('.centralRow').animate({ scrollTop: $('#queryContent').height() }, 'fast');
           },
           error: function (resp) {
             var error;
@@ -1746,101 +1883,105 @@
       var element = '#outputEditorWrapper' + counter;
 
       $(element + ' .fa-caret-down').first().on('click', function () {
-        $(element).find('.queryProfile').remove();
-        $(element).append('<div class="queryProfile"></div>');
-        var queryProfile = $(element + ' .queryProfile').first();
-        queryProfile.hide();
+        var alreadyRendered = $(element).find('.queryProfile');
+        if (!$(alreadyRendered).is(':visible')) {
+          $(element).append('<div class="queryProfile" counter="' + counter + '"></div>');
+          var queryProfile = $(element + ' .queryProfile').first();
+          queryProfile.hide();
 
-        // var outputPosition = $(element + ' .fa-caret-down').first().offset();
-        queryProfile
-        .css('position', 'absolute')
-        .css('left', 215)
-        .css('top', 55);
+          // var outputPosition = $(element + ' .fa-caret-down').first().offset();
+          queryProfile
+          .css('position', 'absolute')
+          .css('left', 215)
+          .css('top', 55);
 
-        // $("#el").offset().top - $(document).scrollTop()
-        var profileWidth = 590;
+          // $("#el").offset().top - $(document).scrollTop()
+          var profileWidth = 590;
 
-        var legend = [
-          'A', 'B', 'C', 'D', 'E', 'F'
-        ];
+          var legend = [
+            'A', 'B', 'C', 'D', 'E', 'F'
+          ];
 
-        var colors = [
-          'rgb(48, 125, 153)',
-          'rgb(241, 124, 176)',
-          'rgb(178, 145, 47)',
-          'rgb(93, 165, 218)',
-          'rgb(250, 164, 58)',
-          'rgb(96, 189, 104)'
-        ];
+          var colors = [
+            'rgb(48, 125, 153)',
+            'rgb(241, 124, 176)',
+            'rgb(137, 110, 37)',
+            'rgb(93, 165, 218)',
+            'rgb(250, 164, 58)',
+            'rgb(96, 189, 104)'
+          ];
 
-        var descs = [
-          'startup time for query engine',
-          'query parsing',
-          'abstract syntax tree optimizations',
-          'instanciation of initial execution plan',
-          'execution plan optimization and permutation',
-          'query execution'
-        ];
+          var descs = [
+            'startup time for query engine',
+            'query parsing',
+            'abstract syntax tree optimizations',
+            'instanciation of initial execution plan',
+            'execution plan optimization and permutation',
+            'query execution'
+          ];
 
-        queryProfile.append(
-          '<i class="fa fa-close closeProfile"></i>' +
-          '<span class="profileHeader">Profiling information</span>' +
-          '<div class="pure-g pure-table pure-table-body"></div>' +
-          '<div class="prof-progress"></div>' +
-          '<div class="prof-progress-label"></div>' +
-          '<div class="clear"></div>'
-        );
-
-        var total = 0;
-        _.each(data, function (value) {
-          total += value * 1000;
-        });
-
-        var pos = 0;
-        var width;
-        var adjustWidth = 0;
-
-        _.each(data, function (value, key) {
-          var ms = numeral(value * 1000).format('0.000');
-          ms += ' ms';
-
-          queryProfile.find('.pure-g').append(
-            '<div class="pure-table-row noHover">' +
-               '<div class="pure-u-1-24 left"><p class="bold" style="background:' + colors[pos] + '">' + legend[pos] + '</p></div>' +
-               '<div class="pure-u-4-24 left">' + ms + '</div>' +
-               '<div class="pure-u-6-24 left">' + key + '</div>' +
-               '<div class="pure-u-13-24 left">' + descs[pos] + '</div>' +
-            '</div>'
+          queryProfile.append(
+            '<i class="fa fa-close closeProfile"></i>' +
+              '<span class="profileHeader">Profiling information</span>' +
+                '<div class="pure-g pure-table pure-table-body"></div>' +
+                  '<div class="prof-progress"></div>' +
+                    '<div class="prof-progress-label"></div>' +
+                      '<div class="clear"></div>'
           );
 
-          width = (value * 1000) / total * 100;
-          if (width < 5) {
-            width = 5;
-            adjustWidth += 5;
-          }
+          var total = 0;
+          _.each(data, function (value) {
+            total += value * 1000;
+          });
 
-          if (pos === 5 && adjustWidth !== 0) {
-            width = width - adjustWidth;
-            queryProfile.find('.prof-progress').append(
-              '<div style="width: ' + width + '%; background-color: ' + colors[pos] + '"></div>'
-            );
-            queryProfile.find('.prof-progress-label').append(
-              '<div style="width: ' + width + '%;">' + legend[pos] + '</div>'
-            );
-          } else {
-            queryProfile.find('.prof-progress').append(
-              '<div style="width: ' + width + '%; background-color: ' + colors[pos] + '"></div>'
-            );
-            queryProfile.find('.prof-progress-label').append(
-              '<div style="width: ' + width + '%;">' + legend[pos] + '</div>'
-            );
-          }
-          pos++;
-        });
+          var pos = 0;
+          var width;
+          var adjustWidth = 0;
 
-        queryProfile.width(profileWidth);
-        queryProfile.height('auto');
-        queryProfile.fadeIn('fast');
+          _.each(data, function (value, key) {
+            var ms = numeral(value * 1000).format('0.000');
+            ms += ' ms';
+
+            queryProfile.find('.pure-g').append(
+              '<div class="pure-table-row noHover">' +
+                '<div class="pure-u-1-24 left"><p class="bold" style="background:' + colors[pos] + '">' + legend[pos] + '</p></div>' +
+                  '<div class="pure-u-4-24 left">' + ms + '</div>' +
+                    '<div class="pure-u-6-24 left">' + key + '</div>' +
+                      '<div class="pure-u-13-24 left">' + descs[pos] + '</div>' +
+                        '</div>'
+            );
+
+            width = (value * 1000) / total * 100;
+            if (width < 5) {
+              width = 5;
+              adjustWidth += 5;
+            }
+
+            if (pos === 5 && adjustWidth !== 0) {
+              width = width - adjustWidth;
+              queryProfile.find('.prof-progress').append(
+                '<div style="width: ' + width + '%; background-color: ' + colors[pos] + '"></div>'
+              );
+              queryProfile.find('.prof-progress-label').append(
+                '<div style="width: ' + width + '%;">' + legend[pos] + '</div>'
+              );
+            } else {
+              queryProfile.find('.prof-progress').append(
+                '<div style="width: ' + width + '%; background-color: ' + colors[pos] + '"></div>'
+              );
+              queryProfile.find('.prof-progress-label').append(
+                '<div style="width: ' + width + '%;">' + legend[pos] + '</div>'
+              );
+            }
+            pos++;
+          });
+
+          queryProfile.width(profileWidth);
+          queryProfile.height('auto');
+          queryProfile.fadeIn('fast');
+        } else {
+          $(element).find('.queryProfile').remove();
+        }
       });
     },
 
@@ -2069,7 +2210,29 @@
         id: '#outputGraph' + counter,
         data: data
       });
-      this.graphViewer.renderAQL();
+      this.graphViewer.renderAQLPreview();
+    },
+
+    showResultInGraphViewer: function (data, counter) {
+      window.location.hash = '#aql_graph';
+
+      // TODO better manage mechanism for both gv's
+      if (window.App.graphViewer) {
+        if (window.App.graphViewer.graphSettingsView) {
+          window.App.graphViewer.graphSettingsView.remove();
+        }
+        window.App.graphViewer.remove();
+      }
+
+      window.App.graphViewer = new window.GraphViewer({
+        name: undefined,
+        documentStore: window.App.arangoDocumentStore,
+        collection: new window.GraphCollection(),
+        userConfig: window.App.userConfig,
+        noDefinedGraph: true,
+        data: data
+      });
+      window.App.graphViewer.renderAQL();
     },
 
     getAQL: function (originCallback) {

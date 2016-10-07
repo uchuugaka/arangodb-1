@@ -35,42 +35,47 @@
     },
 
     render: function (navi) {
-      var self = this;
+      if (window.location.hash === '#shards') {
+        var self = this;
 
-      $.ajax({
-        type: 'GET',
-        cache: false,
-        url: arangoHelper.databaseUrl('/_admin/cluster/shardDistribution'),
-        contentType: 'application/json',
-        processData: false,
-        async: true,
-        success: function (data) {
-          var collsAvailable = false;
-          var collName;
-          self.shardDistribution = data.results;
+        $.ajax({
+          type: 'GET',
+          cache: false,
+          url: arangoHelper.databaseUrl('/_admin/cluster/shardDistribution'),
+          contentType: 'application/json',
+          processData: false,
+          async: true,
+          success: function (data) {
+            var collsAvailable = false;
+            self.shardDistribution = data.results;
 
-          _.each(data.results, function (ignore, name) {
-            collName = name.substring(0, 1);
-            if (collName !== '_' && name !== 'error' && name !== 'code') {
-              collsAvailable = true;
+            _.each(data.results, function (ignore, name) {
+              if (name !== 'error' && name !== 'code') {
+                if (name.substring(0, 1) !== '_') {
+                  collsAvailable = true;
+                }
+                if (name.startsWith('_local_') || name.startsWith('_to_') || name.startsWith('_from_')) {
+                  collsAvailable = true;
+                }
+              }
+            });
+
+            if (collsAvailable) {
+              self.continueRender(data.results);
+            } else {
+              arangoHelper.renderEmpty('No collections and no shards available');
             }
-          });
+          },
+          error: function (data) {
+            if (data.readyState !== 0) {
+              arangoHelper.arangoError('Cluster', 'Could not fetch sharding information.');
+            }
+          }
+        });
 
-          if (collsAvailable) {
-            self.continueRender(data.results);
-          } else {
-            arangoHelper.renderEmpty('No collections and no shards available');
-          }
-        },
-        error: function (data) {
-          if (data.readyState !== 0) {
-            arangoHelper.arangoError('Cluster', 'Could not fetch sharding information.');
-          }
+        if (navi !== false) {
+          arangoHelper.buildNodesSubNav('Shards');
         }
-      });
-
-      if (navi !== false) {
-        arangoHelper.buildNodesSubNav('Shards');
       }
     },
 
@@ -159,13 +164,12 @@
     },
 
     confirmMoveShards: function (dbName, collectionName, shardName, fromServer) {
-      var self = this;
       var toServer = $('#toDBServer').val();
 
       var data = {
         database: dbName,
-        collection: collectionName,
-        shard: shardName,
+        collections: [collectionName],
+        shards: [shardName],
         fromServer: fromServer,
         toServer: toServer
       };
@@ -179,11 +183,11 @@
         data: JSON.stringify(data),
         async: true,
         success: function (data) {
-          if (data === true) {
-            window.setTimeout(function () {
-              self.render(false);
-            }, 1500);
+          if (data.id) {
             arangoHelper.arangoNotification('Shard ' + shardName + ' will be moved to ' + toServer + '.');
+            window.setTimeout(function () {
+              window.App.shardsView.render();
+            }, 2000);
           }
         },
         error: function () {
@@ -222,12 +226,65 @@
     },
 
     continueRender: function (collections) {
+      var self = this;
+
       delete collections.code;
       delete collections.error;
 
+      _.each(collections, function (attr, name) {
+        // smart found
+        var combined = {
+          Plan: {},
+          Current: {}
+        };
+
+        if (name.startsWith('_local_')) {
+          // if prefix avail., get the collection name
+          var cName = name.substr(7, name.length - 1);
+
+          var toFetch = [
+            '_local_' + cName,
+            '_from_' + cName,
+            '_to_' + cName,
+            cName
+          ];
+
+          var pos = 0;
+          _.each(toFetch, function (val, key) {
+            _.each(collections[toFetch[pos]].Current, function (shardVal, shardName) {
+              combined.Current[shardName] = shardVal;
+            });
+
+            _.each(collections[toFetch[pos]].Plan, function (shardVal, shardName) {
+              combined.Plan[shardName] = shardVal;
+            });
+
+            delete collections[toFetch[pos]];
+            collections[cName] = combined;
+            pos++;
+          });
+        }
+      });
+
+      // order results
+      var ordered = {};
+      Object.keys(collections).sort().forEach(function (key) {
+        ordered[key] = collections[key];
+      });
+
       this.$el.html(this.template.render({
-        collections: collections
+        collections: ordered
       }));
+
+      _.each(collections, function (shard) {
+        _.each(shard.Plan, function (val, key) {
+          if (val.progress) {
+            window.setTimeout(function () {
+              self.render();
+            }, 1500);
+          }
+        });
+      });
     },
 
     updateServerTime: function () {

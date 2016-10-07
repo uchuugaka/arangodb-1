@@ -178,7 +178,8 @@ static int ParseDocumentOrDocumentHandle(v8::Isolate* isolate,
       try {
         std::shared_ptr<LogicalCollection> col =
             ci->getCollection(vocbase->name(), collectionName);
-        collection = new LogicalCollection(col);
+        auto colCopy = col->clone();
+        collection = colCopy.release();
       } catch (...) {
         return TRI_ERROR_ARANGO_COLLECTION_NOT_FOUND;
       }
@@ -239,7 +240,7 @@ static std::vector<LogicalCollection*> GetCollectionsCluster(
       ClusterInfo::instance()->getCollections(vocbase->name());
 
   for (auto& collection : collections) {
-    auto c = std::make_unique<LogicalCollection>(collection);
+    std::unique_ptr<LogicalCollection> c(collection->clone());
     result.emplace_back(c.get());
     c.release();
   }
@@ -792,6 +793,21 @@ static void JS_DocumentVocbaseCol(
   TRI_V8_TRY_CATCH_END
 }
 
+
+#ifndef USE_ENTERPRISE
+////////////////////////////////////////////////////////////////////////////////
+/// @brief unloads a collection, case of a coordinator in a cluster
+////////////////////////////////////////////////////////////////////////////////
+
+static int ULVocbaseColCoordinator(std::string const& databaseName,
+                                   std::string const& collectionCID,
+                                   TRI_vocbase_col_status_e status) {
+  
+  return ClusterInfo::instance()->setCollectionStatusCoordinator(
+    databaseName, collectionCID, status);
+  
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 /// @brief drops a collection, case of a coordinator in a cluster
 ////////////////////////////////////////////////////////////////////////////////
@@ -822,6 +838,7 @@ static void DropVocbaseColCoordinator(
 
   TRI_V8_RETURN_UNDEFINED();
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 /// @brief was docuBlock collectionDrop
@@ -842,7 +859,11 @@ static void JS_DropVocbaseCol(v8::FunctionCallbackInfo<v8::Value> const& args) {
 
   // If we are a coordinator in a cluster, we have to behave differently:
   if (ServerState::instance()->isCoordinator()) {
+#ifdef USE_ENTERPRISE
+    DropVocbaseColCoordinatorEnterprise(args, collection);
+#else
     DropVocbaseColCoordinator(args, collection);
+#endif
     return;
   }
 
@@ -980,37 +1001,41 @@ static void JS_LoadVocbaseCol(v8::FunctionCallbackInfo<v8::Value> const& args) {
   }
 
   if (ServerState::instance()->isCoordinator()) {
-    std::string const databaseName(collection->dbName());
-    std::string const cid = collection->cid_as_string();
-
-    int res = ClusterInfo::instance()->setCollectionStatusCoordinator(
-        databaseName, cid, TRI_VOC_COL_STATUS_LOADED);
-
+    int res = 
+#ifdef USE_ENTERPRISE
+      ULVocbaseColCoordinatorEnterprise(
+        collection->dbName(), collection->cid_as_string(),
+        TRI_VOC_COL_STATUS_LOADED);
+#else
+      ULVocbaseColCoordinator(
+        collection->dbName(), collection->cid_as_string(),
+        TRI_VOC_COL_STATUS_LOADED);
+#endif
     if (res != TRI_ERROR_NO_ERROR) {
       TRI_V8_THROW_EXCEPTION(res);
     }
-
     TRI_V8_RETURN_UNDEFINED();
   }
 
   SingleCollectionTransaction trx(
-      V8TransactionContext::Create(collection->vocbase(), true),
-      collection->cid(), TRI_TRANSACTION_READ);
-
+    V8TransactionContext::Create(collection->vocbase(), true),
+    collection->cid(), TRI_TRANSACTION_READ);
+  
   int res = trx.begin();
-
+  
   if (res != TRI_ERROR_NO_ERROR) {
     TRI_V8_THROW_EXCEPTION(res);
   }
-
+  
   res = trx.finish(res);
   
   if (res != TRI_ERROR_NO_ERROR) {
     TRI_V8_THROW_EXCEPTION(res);
   }
-
+  
   TRI_V8_RETURN_UNDEFINED();
   TRI_V8_TRY_CATCH_END
+
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1151,6 +1176,7 @@ static void JS_PropertiesVocbaseCol(
           TRI_V8_THROW_EXCEPTION_PARAMETER(
               "indexBuckets must be a two-power between 1 and 1024");
         }
+        
         int res = info->update(slice, false);
 
         if (res != TRI_ERROR_NO_ERROR) {
@@ -1176,7 +1202,7 @@ static void JS_PropertiesVocbaseCol(
     result->Set(TRI_V8_ASCII_STRING("indexBuckets"),
                 v8::Number::New(isolate, info->indexBuckets()));
 
-    std::shared_ptr<LogicalCollection> c = ClusterInfo::instance()->getCollection(
+    auto c = ClusterInfo::instance()->getCollection(
         databaseName, StringUtils::itoa(collection->cid()));
     v8::Handle<v8::Array> shardKeys = v8::Array::New(isolate);
     std::vector<std::string> const sks = c->shardKeys();
@@ -2406,11 +2432,18 @@ static void JS_UnloadVocbaseCol(
   int res;
 
   if (ServerState::instance()->isCoordinator()) {
-    std::string const databaseName(collection->dbName());
-
-    res = ClusterInfo::instance()->setCollectionStatusCoordinator(
-        databaseName, collection->cid_as_string(),
+    
+    res = 
+#ifdef USE_ENTERPRISE
+      ULVocbaseColCoordinatorEnterprise(
+        collection->dbName(), collection->cid_as_string(),
         TRI_VOC_COL_STATUS_UNLOADED);
+#else
+      ULVocbaseColCoordinator(
+        collection->dbName(), collection->cid_as_string(),
+        TRI_VOC_COL_STATUS_UNLOADED);
+#endif
+
   } else {
     res = collection->vocbase()->unloadCollection(collection, false);
   }
@@ -2526,7 +2559,8 @@ static void JS_CollectionVocbase(
     try {
       std::shared_ptr<LogicalCollection> const ci =
           ClusterInfo::instance()->getCollection(vocbase->name(), name);
-      collection = new LogicalCollection(ci);
+      auto colCopy = ci->clone();
+      collection = colCopy.release();
     } catch (...) {
       // not found
       TRI_V8_RETURN_NULL();

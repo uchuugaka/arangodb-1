@@ -27,6 +27,7 @@
 #include "Basics/Common.h"
 #include "Utils/CollectionNameResolver.h"
 #include "V8Server/v8-vocbase.h"
+#include "VocBase/vocbase.h"
 
 namespace arangodb {
 class LogicalCollection;
@@ -46,7 +47,12 @@ bool EqualCollection(arangodb::CollectionNameResolver const* resolver,
                      std::string const& collectionName,
                      arangodb::LogicalCollection const* collection);
 
+////////////////////////////////////////////////////////////////////////////////
 /// @brief wraps a LogicalCollection
+/// Note that if collection is a local collection, then the object will never
+/// be freed. If it is not a local collection (coordinator case), then delete
+/// will be called when the V8 object is garbage collected.
+////////////////////////////////////////////////////////////////////////////////
 
 v8::Handle<v8::Object> WrapCollection(
     v8::Isolate* isolate, arangodb::LogicalCollection const* collection);
@@ -55,5 +61,16 @@ void TRI_InitV8Collection(v8::Handle<v8::Context> context,
                           TRI_vocbase_t* vocbase, size_t const threadNumber,
                           TRI_v8_global_t* v8g, v8::Isolate* isolate,
                           v8::Handle<v8::ObjectTemplate> ArangoDBNS);
+
+#ifdef USE_ENTERPRISE
+void DropVocbaseColCoordinatorEnterprise(
+  v8::FunctionCallbackInfo<v8::Value> const& args,
+  arangodb::LogicalCollection* collection);
+
+int ULVocbaseColCoordinatorEnterprise(std::string const& databaseName,
+                                      std::string const& collectionCID,
+                                      TRI_vocbase_col_status_e status);
+
+#endif
 
 #endif

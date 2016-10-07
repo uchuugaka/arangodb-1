@@ -41,6 +41,7 @@
 #include "Indexes/SkiplistIndex.h"
 #include "Logger/Logger.h"
 #include "Utils/CollectionNameResolver.h"
+#include "Utils/Events.h"
 #include "Utils/OperationCursor.h"
 #include "Utils/SingleCollectionTransaction.h"
 #include "Utils/TransactionContext.h"
@@ -1071,7 +1072,17 @@ void Transaction::buildDocumentIdentity(LogicalCollection* collection,
                                         TRI_doc_mptr_t const* newMptr) {
   builder.openObject();
   if (ServerState::isRunningInCluster(_serverRole)) {
-    builder.add(StaticStrings::IdString, VPackValue(resolver()->getCollectionName(cid) + "/" + key.toString()));
+    std::string resolved = resolver()->getCollectionNameCluster(cid);
+#ifdef USE_ENTERPRISE
+  if (resolved.compare(0, 7, "_local_") == 0) {
+    resolved.erase(0, 7);
+  } else if (resolved.compare(0, 6, "_from_") == 0) {
+    resolved.erase(0, 6);
+  } else if (resolved.compare(0, 4, "_to_") == 0) {
+    resolved.erase(0,4);
+  }
+#endif
+    builder.add(StaticStrings::IdString, VPackValue(resolved + "/" + key.toString()));
   } else {
     builder.add(StaticStrings::IdString,
                 VPackValue(collection->name() + "/" + key.toString()));
@@ -2608,12 +2619,16 @@ OperationResult Transaction::truncate(std::string const& collectionName,
   TRI_ASSERT(getStatus() == TRI_TRANSACTION_RUNNING);
   
   OperationOptions optionsCopy = options;
+  OperationResult result;
 
   if (ServerState::isCoordinator(_serverRole)) {
-    return truncateCoordinator(collectionName, optionsCopy);
+    result = truncateCoordinator(collectionName, optionsCopy);
+  } else {
+    result = truncateLocal(collectionName, optionsCopy);
   }
 
-  return truncateLocal(collectionName, optionsCopy);
+  events::TruncateCollection(collectionName, result.code);
+  return result;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3290,14 +3305,7 @@ Transaction* Transaction::clone() const {
 std::shared_ptr<Index> Transaction::indexForCollectionCoordinator(
     std::string const& name, std::string const& id) const {
   auto clusterInfo = arangodb::ClusterInfo::instance();
-  auto collectionInfo =
-      clusterInfo->getCollection(_vocbase->name(), name);
-
-  if (collectionInfo.get() == nullptr) {
-    THROW_ARANGO_EXCEPTION_FORMAT(TRI_ERROR_INTERNAL,
-                                  "collection not found '%s' in database '%s'",
-                                  name.c_str(), _vocbase->name().c_str());
-  }
+  auto collectionInfo = clusterInfo->getCollection(_vocbase->name(), name);
 
   auto idxs = collectionInfo->getIndexes();
   TRI_idx_iid_t iid = basics::StringUtils::uint64(id);
@@ -3316,14 +3324,7 @@ std::shared_ptr<Index> Transaction::indexForCollectionCoordinator(
 std::vector<std::shared_ptr<Index>>
 Transaction::indexesForCollectionCoordinator(std::string const& name) const {
   auto clusterInfo = arangodb::ClusterInfo::instance();
-  auto collectionInfo =
-      clusterInfo->getCollection(_vocbase->name(), name);
-
-  if (collectionInfo.get() == nullptr) {
-    THROW_ARANGO_EXCEPTION_FORMAT(TRI_ERROR_INTERNAL,
-                                  "collection not found '%s' in database '%s'",
-                                  name.c_str(), _vocbase->name().c_str());
-  }
+  auto collectionInfo = clusterInfo->getCollection(_vocbase->name(), name);
   return collectionInfo->getIndexes();
 }
 

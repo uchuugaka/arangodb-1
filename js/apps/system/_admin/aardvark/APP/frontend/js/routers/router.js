@@ -46,6 +46,7 @@
     },
 
     execute: function (callback, args) {
+      // this function executes before every route call
       $('#subNavigationBar .breadcrumb').html('');
       $('#subNavigationBar .bottom').html('');
       $('#loadingScreen').hide();
@@ -57,6 +58,13 @@
       if (this.graphViewer) {
         if (this.graphViewer.graphSettingsView) {
           this.graphViewer.graphSettingsView.hide();
+        }
+      }
+      if (this.queryView) {
+        if (this.queryView.graphViewer) {
+          if (this.queryView.graphViewer.graphSettingsView) {
+            this.queryView.graphViewer.graphSettingsView.hide();
+          }
         }
       }
     },
@@ -336,7 +344,7 @@
         this.navigate('#dashboard', {trigger: true});
         return;
       }
-      this.nodesView = new window.NodesView2({
+      this.nodesView = new window.NodesView({
       });
       this.nodesView.render();
     },
@@ -687,12 +695,15 @@
         this.waitForInit(this.graph.bind(this), name);
         return;
       }
+
+      // TODO better manage mechanism for both gv's
       if (this.graphViewer) {
         if (this.graphViewer.graphSettingsView) {
           this.graphViewer.graphSettingsView.remove();
         }
         this.graphViewer.remove();
       }
+
       this.graphViewer = new window.GraphViewer({
         name: name,
         documentStore: this.arangoDocumentStore,
