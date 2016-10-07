@@ -279,7 +279,7 @@ void WorkMonitor::clearHandlers() {
     return;
   }
   
-  WORK_MONITOR.clearHandlers();
+  WORK_MONITOR.clearAllHandlers();
 }
 
 // -----------------------------------------------------------------------------
