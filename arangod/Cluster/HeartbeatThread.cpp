@@ -73,7 +73,7 @@ HeartbeatThread::HeartbeatThread(AgencyCallbackRegistry* agencyCallbackRegistry,
       _currentVersions(0, 0),
       _desiredVersions(0, 0),
       _wasNotified(false),
-      _strand(*ioService) {}
+      _strand(new boost::asio::io_service::strand(*ioService)) {}
 
 ////////////////////////////////////////////////////////////////////////////////
 /// @brief destroys a heartbeat thread
@@ -100,6 +100,8 @@ void HeartbeatThread::run() {
   } else {
     runDBServer();
   }
+
+  _strand.reset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -693,7 +695,7 @@ bool HeartbeatThread::syncDBServerStatusQuo() {
 
     // schedule a job for the change
     auto self = shared_from_this();
-    _strand.post([self, this]() {
+    _strand->post([self, this]() {
       DBServerAgencySync job(this);
 
       job.work();

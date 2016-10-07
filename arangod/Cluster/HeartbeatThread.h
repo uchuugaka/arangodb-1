@@ -226,7 +226,7 @@ class HeartbeatThread : public Thread,
 
   bool _wasNotified;
 
-  boost::asio::io_service::strand _strand;
+  std::unique_ptr<boost::asio::io_service::strand> _strand;
 };
 }
 

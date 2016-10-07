@@ -482,6 +482,7 @@ void ClusterFeature::unprepare() {
         }
       }
     }
+
     if (_unregisterOnShutdown) {
       ServerState::instance()->unregister();
     }
