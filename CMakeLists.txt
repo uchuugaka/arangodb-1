@@ -67,7 +67,7 @@ endif ()
 ################################################################################
 
 set(ARANGODB_VERSION_MAJOR      "3")
-set(ARANGODB_VERSION_MINOR      "0")
+set(ARANGODB_VERSION_MINOR      "1")
 set(ARANGODB_VERSION_REVISION   "devel")
 set(ARANGODB_PACKAGE_REVISION   "1")
 
@@ -108,6 +108,7 @@ set(BIN_ARANGOVPACK   arangovpack)
 set(TEST_BASICS_SUITE basics_suite)
 set(TEST_GEO_SUITE    geo_suite)
 set(PACKAGES_LIST)
+set(CLEAN_PACKAGES_LIST)
 
 ################################################################################
 ## VERSION FILES
@@ -916,6 +917,10 @@ endif()
 
 add_custom_target(packages
   DEPENDS ${PACKAGES_LIST}
+  )
+
+add_custom_target(clean_packages
+  DEPENDS ${CLEAN_PACKAGES_LIST}
   )
 
 message(STATUS "building for git revision: ${ARANGODB_BUILD_REPOSITORY}")

@@ -47,6 +47,9 @@ class RestHandler : public RequestStatisticsAgent,
   RestHandler& operator=(RestHandler const&) = delete;
 
  public:
+  static thread_local RestHandler const* CURRENT_HANDLER;
+
+ public:
   RestHandler(GeneralRequest*, GeneralResponse*);
   ~RestHandler() = default;
 

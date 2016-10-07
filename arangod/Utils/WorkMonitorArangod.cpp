@@ -141,11 +141,7 @@ void WorkMonitor::run() {
     }
   }
 
-  std::shared_ptr<rest::RestHandler>* shared;
-
-  while (_workOverview.pop(shared)) {
-    delete shared;
-  }
+  clearAllHandlers();
 }
 
 void WorkMonitor::clearAllHandlers() {
@@ -156,6 +152,34 @@ void WorkMonitor::clearAllHandlers() {
   }
 
   _waiter.broadcast();
+}
+
+void WorkMonitor::pushHandler(std::shared_ptr<RestHandler> handler) {
+  WorkDescription* desc = createWorkDescription(WorkType::HANDLER);
+  TRI_ASSERT(desc->_type == WorkType::HANDLER);
+
+  new (&desc->_data._handler._handler) std::shared_ptr<RestHandler>(handler);
+  new (&desc->_data._handler._canceled) std::atomic<bool>(false);
+
+  activateWorkDescription(desc);
+  RestHandler::CURRENT_HANDLER = handler.get();
+}
+
+void WorkMonitor::popHandler() {
+  WorkDescription* desc = deactivateWorkDescription();
+  TRI_ASSERT(desc != nullptr);
+  TRI_ASSERT(desc->_type == WorkType::HANDLER);
+  TRI_ASSERT(desc->_data._handler._handler != nullptr);
+
+  try {
+    freeWorkDescription(desc);
+  } catch (...) {
+    // just to prevent throwing exceptions from here, as this method
+    // will be called in destructors...
+  }
+
+  // TODO(fc) we might have a stack of handlers
+  RestHandler::CURRENT_HANDLER = nullptr;
 }
 
 bool WorkMonitor::cancelAql(WorkDescription* desc) {
