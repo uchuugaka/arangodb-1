@@ -151,7 +151,7 @@ Communicator::Communicator() : _curl(nullptr) {
 Communicator::~Communicator() {
   ::curl_multi_cleanup(_curl);
   ::curl_global_cleanup();
-};
+}
 
 Ticket Communicator::addRequest(Destination destination,
                                 std::unique_ptr<GeneralRequest> request,
@@ -294,6 +294,9 @@ void Communicator::createRequestInProgress(NewRequest const& newRequest) {
   curl_easy_setopt(handle, CURLOPT_HEADERDATA, handleInProgress->_rip.get());
   curl_easy_setopt(handle, CURLOPT_DEBUGFUNCTION, Communicator::curlDebug);
   curl_easy_setopt(handle, CURLOPT_DEBUGDATA, handleInProgress->_rip.get());
+  curl_easy_setopt(handle, CURLOPT_ERRORBUFFER,
+                   handleInProgress->_rip.get()->_errorBuffer);
+
   // mop: XXX :S CURLE 51 and 60...
   curl_easy_setopt(handle, CURLOPT_SSL_VERIFYPEER, 0L);
   curl_easy_setopt(handle, CURLOPT_SSL_VERIFYHOST, 0L);
@@ -305,7 +308,7 @@ void Communicator::createRequestInProgress(NewRequest const& newRequest) {
   // in doubt change the timeout to _MS below and hardcode it to 999 and see if
   // the requests immediately fail
   // if not this hack can go away
-  if (connectTimeout < 0) {
+  if (connectTimeout <= 0) {
     connectTimeout = 1;
   }
 
@@ -376,7 +379,10 @@ void Communicator::handleResult(CURL* handle, CURLcode rc) {
   LOG_TOPIC(TRACE, Logger::REQUESTS)
       << prefix << "Curl rc is : " << rc << " after " << std::fixed
       << (TRI_microtime() - rip->_startTime) << "s";
-  ;
+  if (strlen(rip->_errorBuffer) != 0) {
+    LOG_TOPIC(TRACE, Logger::REQUESTS)
+        << prefix << "Curl error details: " << rip->_errorBuffer;
+  }
 
   switch (rc) {
     case CURLE_OK: {

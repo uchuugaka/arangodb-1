@@ -51,7 +51,9 @@ struct RequestInProgress {
         _requestBody(requestBody),
         _requestHeaders(nullptr),
         _responseBody(new StringBuffer(TRI_UNKNOWN_MEM_ZONE, false)),
-        _options(options) {}
+        _options(options) {
+    _errorBuffer[0] = '\0';
+  }
 
   ~RequestInProgress() {
     if (_requestHeaders != nullptr) {
@@ -73,6 +75,8 @@ struct RequestInProgress {
   double _startTime;
   std::unique_ptr<StringBuffer> _responseBody;
   Options _options;
+
+  char _errorBuffer[CURL_ERROR_SIZE];
 };
 
 struct CurlHandle {
