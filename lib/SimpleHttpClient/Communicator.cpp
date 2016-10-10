@@ -357,7 +357,6 @@ void Communicator::handleResult(CURL* handle, CURLcode rc) {
   LOG_TOPIC(TRACE, Logger::REQUESTS) << prefix << "Curl rc is : " << rc << " after " << std::fixed << (TRI_microtime() - rip->_startTime) << "s";
   if (strlen(rip->_errorBuffer) != 0) {
     LOG_TOPIC(TRACE, Logger::REQUESTS) << prefix << "Curl error details: " << rip->_errorBuffer;
-    
   }
 
   switch (rc) {
