@@ -66,6 +66,8 @@ namespace communicator {
     double _startTime;
     std::unique_ptr<StringBuffer> _responseBody;
     Options _options;
+
+    std::string _errorBuffer;
   };
   
   struct CurlHandle {
