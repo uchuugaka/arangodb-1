@@ -498,6 +498,8 @@ endif ()
 ## JEMALLOC
 ################################################################################
 
+set(DEFAULT_LIBRARY_SUFFIXES ${CMAKE_FIND_LIBRARY_SUFFIXES})
+set(CMAKE_FIND_LIBRARY_SUFFIXES ${CMAKE_STATIC_LIBRARY_SUFFIX})
 find_package(jemalloc)
 set(JEMALLOC_DEFAULT_VALUE ${JEMALLOC_FOUND})
 
@@ -524,6 +526,7 @@ if (USE_JEMALLOC)
     set(SYS_LIBS ${SYS_LIBS} ${FORCE_JEMALLOC_LIB})
   endif ()
 endif ()
+set(CMAKE_FIND_LIBRARY_SUFFIXES ${DEFAULT_LIBRARY_SUFFIXES})
 
 ################################################################################
 ## TCMALLOC
@@ -943,6 +946,19 @@ if( EXISTS "${CMAKE_CURRENT_BINARY_DIR}/compile_commands.json" )
         ${CMAKE_CURRENT_SOURCE_DIR}/compile_commands.json
     )
 endif()
+
+
+################################################################################
+## SNAPCRAFT PACKAGE
+################################################################################
+
+#set(USE_SNAPCRAFT "ON")
+if (USE_SNAPCRAFT)
+  if(NOT DEFINED SNAP_PORT)
+    set(SNAP_PORT 8529)
+  endif()
+  include(packages/snap)
+endif ()
 
 
 add_custom_target(packages
