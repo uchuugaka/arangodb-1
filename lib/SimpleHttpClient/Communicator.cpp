@@ -284,7 +284,7 @@ void Communicator::createRequestInProgress(NewRequest const& newRequest) {
   curl_easy_setopt(handle, CURLOPT_HEADERDATA, handleInProgress->_rip.get());
   curl_easy_setopt(handle, CURLOPT_DEBUGFUNCTION, Communicator::curlDebug);
   curl_easy_setopt(handle, CURLOPT_DEBUGDATA, handleInProgress->_rip.get());
-  curl_easy_setopt(handle, CURLOPT_ERRORBUFFER, handleInProgress->_rip.get()->_errorBuffer.c_str());
+  curl_easy_setopt(handle, CURLOPT_ERRORBUFFER, handleInProgress->_rip.get()->_errorBuffer);
 
   // mop: XXX :S CURLE 51 and 60...
   curl_easy_setopt(handle, CURLOPT_SSL_VERIFYPEER, 0L);
@@ -355,7 +355,7 @@ void Communicator::handleResult(CURL* handle, CURLcode rc) {
   }
   std::string prefix("Communicator("  + std::to_string(rip->_ticketId) + ") // ");
   LOG_TOPIC(TRACE, Logger::REQUESTS) << prefix << "Curl rc is : " << rc << " after " << std::fixed << (TRI_microtime() - rip->_startTime) << "s";
-  if (!rip->_errorBuffer.empty()) {
+  if (strlen(rip->_errorBuffer) != 0) {
     LOG_TOPIC(TRACE, Logger::REQUESTS) << prefix << "Curl error details: " << rip->_errorBuffer;
     
   }

@@ -44,6 +44,7 @@ namespace communicator {
   struct RequestInProgress {
     RequestInProgress(Destination destination, Callbacks callbacks, Ticket ticketId, std::string const& requestBody, Options const& options)
       : _destination(destination), _callbacks(callbacks), _ticketId(ticketId), _requestBody(requestBody), _requestHeaders(nullptr), _responseBody(new StringBuffer(TRI_UNKNOWN_MEM_ZONE, false)), _options(options) {
+      _errorBuffer[0] = '\0';
     }
 
     ~RequestInProgress() {
@@ -67,7 +68,7 @@ namespace communicator {
     std::unique_ptr<StringBuffer> _responseBody;
     Options _options;
 
-    std::string _errorBuffer;
+    char _errorBuffer[CURL_ERROR_SIZE];
   };
   
   struct CurlHandle {
