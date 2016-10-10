@@ -148,6 +148,11 @@ Communicator::Communicator() : _curl(nullptr) {
   _wakeup.events = CURL_WAIT_POLLIN | CURL_WAIT_POLLPRI;
 }
 
+Communicator::~Communicator() {
+  ::curl_multi_cleanup(_curl);
+  ::curl_global_cleanup();
+}
+
 Ticket Communicator::addRequest(Destination destination,
                                 std::unique_ptr<GeneralRequest> request,
                                 Callbacks callbacks, Options options) {
