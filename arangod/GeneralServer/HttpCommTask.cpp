@@ -122,9 +122,9 @@ void HttpCommTask::addResponse(HttpResponse* response) {
   }
 
   // set "connection" header, keep-alive is the default
-  response->setConnectionType(
-      _closeRequested ? rest::ConnectionType::C_CLOSE
-                      : rest::ConnectionType::C_KEEP_ALIVE);
+  response->setConnectionType(_closeRequested
+                                  ? rest::ConnectionType::C_CLOSE
+                                  : rest::ConnectionType::C_KEEP_ALIVE);
 
   size_t const responseBodyLength = response->bodySize();
 
@@ -592,7 +592,7 @@ void HttpCommTask::processRequest(std::unique_ptr<HttpRequest> request) {
       new HttpResponse(rest::ResponseCode::SERVER_ERROR));
   response->setContentType(request->contentTypeResponse());
   response->setContentTypeRequested(request->contentTypeResponse());
-
+  cancelKeepAlive();
   executeRequest(std::move(request), std::move(response));
 }
 
