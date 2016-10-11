@@ -333,6 +333,12 @@ void SocketTask::resetKeepAlive(boost::system::error_code& err) {
   }
 }
 
+void SocketTask::cancelKeepAlive(boost::system::error_code& err) {
+  if (_useKeepAliveTimeout) {
+    _keepAliveTimer.cancel(err);
+  }
+}
+
 bool SocketTask::reserveMemory() {
   if (_readBuffer.reserve(READ_BLOCK_SIZE + 1) == TRI_ERROR_OUT_OF_MEMORY) {
     LOG(WARN) << "out of memory while reading from client";

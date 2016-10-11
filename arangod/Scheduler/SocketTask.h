@@ -84,6 +84,15 @@ class SocketTask : virtual public Task, public ConnectionStatisticsAgent {
   boost::posix_time::milliseconds _keepAliveTimeout;
   boost::asio::deadline_timer _keepAliveTimer;
   void resetKeepAlive(boost::system::error_code& ec);
+  void cancelKeepAlive(boost::system::error_code& ec);
+  bool cancelKeepAlive() {
+    boost::system::error_code ec;
+    cancelKeepAlive(ec);
+    if (ec) {
+      return false;
+    }
+    return true;
+  }
 
  protected:
   bool _closeRequested = false;
