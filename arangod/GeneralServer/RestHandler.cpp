@@ -109,15 +109,18 @@ int RestHandler::finalizeEngine() {
   try {
     finalizeExecute();
   } catch (Exception const& ex) {
+    LOG(ERR) << "caught exception in " << name() << ": " << DIAGNOSTIC_INFORMATION(ex);
     requestStatisticsAgentSetExecuteError();
     handleError(ex);
     res = TRI_ERROR_INTERNAL;
   } catch (std::exception const& ex) {
+    LOG(ERR) << "caught exception in " << name() << ": " << ex.what();
     requestStatisticsAgentSetExecuteError();
     Exception err(TRI_ERROR_INTERNAL, ex.what(), __FILE__, __LINE__);
     handleError(err);
     res = TRI_ERROR_INTERNAL;
   } catch (...) {
+    LOG(ERR) << "caught unknown exception in " << name();
     requestStatisticsAgentSetExecuteError();
     Exception err(TRI_ERROR_INTERNAL, __FILE__, __LINE__);
     handleError(err);
@@ -162,22 +165,41 @@ int RestHandler::executeEngine() {
 
     return TRI_ERROR_NO_ERROR;
   } catch (Exception const& ex) {
+#ifdef ARANGODB_ENABLE_MAINTAINER_MODE
+    LOG(WARN) << "caught exception in " << name() << ": "
+              << DIAGNOSTIC_INFORMATION(ex);
+#endif
     requestStatisticsAgentSetExecuteError();
     handleError(ex);
   } catch (arangodb::velocypack::Exception const& ex) {
+#ifdef ARANGODB_ENABLE_MAINTAINER_MODE
+    LOG(WARN) << "caught exception in " << name() << ": "
+              << DIAGNOSTIC_INFORMATION(ex);
+#endif
     requestStatisticsAgentSetExecuteError();
     Exception err(TRI_ERROR_INTERNAL, std::string("VPack error: ") + ex.what(),
                   __FILE__, __LINE__);
     handleError(err);
   } catch (std::bad_alloc const& ex) {
+#ifdef ARANGODB_ENABLE_MAINTAINER_MODE
+    LOG(WARN) << "caught exception in " << name() << ": "
+              << DIAGNOSTIC_INFORMATION(ex);
+#endif
     requestStatisticsAgentSetExecuteError();
     Exception err(TRI_ERROR_OUT_OF_MEMORY, ex.what(), __FILE__, __LINE__);
     handleError(err);
   } catch (std::exception const& ex) {
+#ifdef ARANGODB_ENABLE_MAINTAINER_MODE
+    LOG(WARN) << "caught exception in " << name() << ": "
+              << DIAGNOSTIC_INFORMATION(ex);
+#endif
     requestStatisticsAgentSetExecuteError();
     Exception err(TRI_ERROR_INTERNAL, ex.what(), __FILE__, __LINE__);
     handleError(err);
   } catch (...) {
+#ifdef ARANGODB_ENABLE_MAINTAINER_MODE
+    LOG(WARN) << "caught unknown exception in " << name();
+#endif
     requestStatisticsAgentSetExecuteError();
     Exception err(TRI_ERROR_INTERNAL, __FILE__, __LINE__);
     handleError(err);

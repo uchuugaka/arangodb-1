@@ -39,7 +39,7 @@ class RestAqlFunctionsHandler : public RestVocbaseBaseHandler {
 
  public:
   RestStatus execute() override;
-
+  char const* name() const override final { return "RestAqlFunctionsHandler"; }
 };
 }
 

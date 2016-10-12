@@ -38,6 +38,7 @@ class RestUploadHandler : public RestVocbaseBaseHandler {
 
  public:
   RestStatus execute();
+  char const* name() const override final { return "RestUploadHandler"; }
 
   //////////////////////////////////////////////////////////////////////////////
   /// @brief parses a multi-part request body and determines the boundaries of

@@ -36,6 +36,7 @@ class RestActionHandler : public RestVocbaseBaseHandler {
   RestActionHandler(GeneralRequest*, GeneralResponse*);
 
  public:
+  char const* name() const override final { return "RestActionHandler"; }
   bool isDirect() const override;
   RestStatus execute() override;
   bool cancel() override;

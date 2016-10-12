@@ -56,7 +56,6 @@ class RestHandler : public RequestStatisticsAgent,
  public:
   uint64_t handlerId() const { return _handlerId; }
   uint64_t messageId() const;
-
   bool needsOwnThread() const { return _needsOwnThread; }
 
   GeneralRequest const* request() const { return _request.get(); }
@@ -68,6 +67,7 @@ class RestHandler : public RequestStatisticsAgent,
   }
 
  public:
+  virtual char const* name() const = 0;
   virtual bool isDirect() const = 0;
   virtual size_t queue() const { return JobQueue::STANDARD_QUEUE; }
 

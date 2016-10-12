@@ -34,6 +34,7 @@ class RestDocumentHandler : public RestVocbaseBaseHandler {
 
  public:
   RestStatus execute() override final;
+  char const* name() const override final { return "RestDocumentHandler"; }
 
 #ifdef USE_ENTERPRISE
   void finalizeExecute() override;

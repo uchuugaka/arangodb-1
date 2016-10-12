@@ -46,6 +46,8 @@ class MaintenanceHandler : public RestHandler {
                               GeneralResponse* response)
       : RestHandler(request, response){};
 
+  char const* name() const override final { return "MaintenanceHandler"; }
+
   bool isDirect() const override { return true; };
 
   RestStatus execute() override {

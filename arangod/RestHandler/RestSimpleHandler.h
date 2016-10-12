@@ -41,6 +41,7 @@ class RestSimpleHandler : public RestVocbaseBaseHandler {
 
  public:
   RestStatus execute() override final;
+  char const* name() const override final { return "RestSimpleHandler"; }
   bool cancel() override;
 
  private:
