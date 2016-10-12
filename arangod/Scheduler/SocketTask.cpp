@@ -326,7 +326,8 @@ void SocketTask::resetKeepAlive(boost::system::error_code& err) {
           LOG_TOPIC(TRACE, Logger::COMMUNICATION)
               << "keepAliveTimerCallback - called with: " << error.message();
           if (!error) {
-            // timeout
+            LOG_TOPIC(TRACE, Logger::COMMUNICATION)
+                << "keep alive timout - closing stream!";
             closeStream();
           }
         });
